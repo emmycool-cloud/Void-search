@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Gig Hunter</title>
+<style>
+:root{--bg:#EEF2F7;--ink:#13203A;--mut:#5D6B82;--line:#D5DDE8;--sf:#fff;--ac:#E8A317;--acink:#2A1D00;--bad:#B3261E;--ok:#1B7F5C;--mid:#9A6A00}
+@media(prefers-color-scheme:dark){:root{--bg:#0E1622;--ink:#E7EDF5;--mut:#93A1B6;--line:#243146;--sf:#152033;--ac:#F0B13A;--acink:#1E1500;--bad:#F2877F;--ok:#5CC9A0;--mid:#F0B13A}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding:calc(66px + env(safe-area-inset-top,0px)) 0 calc(70px + env(safe-area-inset-bottom,0px));overflow-wrap:anywhere}
+header{position:fixed;top:0;left:0;right:0;z-index:5;display:flex;gap:8px;padding:calc(10px + env(safe-area-inset-top,0px)) 12px 10px;background:var(--bg);border-bottom:1px solid var(--line)}
+input,textarea,select,button{font:inherit;color:inherit}
+input,textarea,select{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--sf)}
+header input{flex:1;min-width:0}
+button{cursor:pointer;border:1px solid var(--line);background:var(--sf);border-radius:8px;padding:9px 14px}
+button.go,button.pri{background:var(--ac);color:var(--acink);border-color:var(--ac);font-weight:700}
+button.x{color:var(--bad)}
+button.ghost{width:100%;border-style:dashed;margin:6px 0 4px;color:var(--mut)}
+main{max-width:640px;margin:0 auto;padding:6px 14px}
+nav{position:fixed;bottom:0;left:0;right:0;display:grid;grid-template-columns:repeat(3,1fr);background:var(--sf);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px)}
+nav button{border:0;border-radius:0;border-top:3px solid transparent;background:none;padding:13px 0;color:var(--mut)}
+nav button.on{color:var(--ink);font-weight:700;border-top-color:var(--ac)}
+.chips{display:flex;gap:6px;overflow-x:auto;padding:10px 0 6px;scrollbar-width:none}
+.chip{flex:none;padding:6px 12px;border:1px solid var(--line);border-radius:99px;color:var(--ink);text-decoration:none;font-size:14px;background:var(--sf)}
+.job{padding:14px 0;border-bottom:1px solid var(--line)}
+.t{font-weight:700;font-size:17px;line-height:1.3}
+.m{color:var(--mut);font-size:14px;margin-top:2px}
+.d{margin:6px 0 2px;font-size:15px;color:var(--mut)}
+.a{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center}
+.a a{padding:9px 14px;border:1px solid var(--line);border-radius:8px;color:var(--ink);text-decoration:none;background:var(--sf)}
+.a select{width:auto}
+.note{margin-top:8px;font-size:14px}
+.strip{display:grid;grid-template-columns:repeat(6,1fr);gap:4px;padding:10px 0;text-align:center;font-size:12px;color:var(--mut)}
+.strip b{display:block;font-size:22px;color:var(--ink)}
+.v{display:inline-block;margin-top:6px;padding:2px 10px;border-radius:99px;font-size:13px;font-weight:700;border:1px solid var(--line)}
+.v.ok{color:var(--ok)}.v.mid{color:var(--mid)}.v.bad{color:var(--bad)}
+.empty,.warn,.meta{color:var(--mut);font-size:15px;margin:14px 0}
+.warn{color:var(--bad)}
+label{display:block;margin:14px 0 4px;font-size:14px;color:var(--mut)}
+dialog{width:min(560px,94vw);border:1px solid var(--line);border-radius:12px;background:var(--bg);color:var(--ink);padding:16px}
+dialog::backdrop{background:rgba(0,0,0,.5)}
+dialog textarea{height:260px;resize:vertical}
+.row{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<header>
+  <input id="q" type="search" placeholder="Any gig: design, writing, delivery, tutor..." enterkeyhint="search">
+  <button class="go" data-a="search">Search</button>
+  <button class="go" data-a="web">Web</button>
+</header>
+<main id="v"></main>
+<nav>
+  <button data-t="find" class="on">Find</button>
+  <button data-t="track">Tracker<span id="n"></span></button>
+  <button data-t="me">Profile</button>
+</nav>
+<dialog id="dlg">
+  <div class="t" id="dt"></div>
+  <textarea id="lt"></textarea>
+  <div class="row">
+    <button class="pri" data-a="copy">Copy</button>
+    <button data-a="applied">Apply (email or page)</button>
+    <button data-a="close">Close</button>
+  </div>
+</dialog>
+
+<script>
+const $=s=>document.querySelector(s);
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const strip=h=>{try{return new DOMParser().parseFromString(h||'','text/html').body.textContent.replace(/\s+/g,' ').trim()}catch(e){return ''}};
+const ST=['saved','applied','replied','interview','won','passed'];
+
+let db={me:{name:'',city:'Benin City',skills:'',pitch:''},jobs:{}};
+try{const s=JSON.parse(localStorage.getItem('gighunter')||'null');if(s){db.me=Object.assign(db.me,s.me);db.jobs=s.jobs||{}}}catch(e){}
+const save=()=>{try{localStorage.setItem('gighunter',JSON.stringify(db))}catch(e){}};
+
+let tab='find',results=[],msgs=[],busy=false,searched=false,cur=null;
+
+const hid=t=>{let h=0;for(const c of t)h=(h*31+c.charCodeAt(0))|0;return 'wb'+(h>>>0)};
+/* ---- Sources: add or remove feeds here ---- */
+const S={
+  Web:async q=>{
+    if(!db.me.worker)throw new Error('Web search needs your Worker URL in Profile.');
+    const r=await fetch(db.me.worker,{method:'POST',headers:{'content-type':'application/json','x-token':db.me.token||''},body:JSON.stringify({q:q||'online gig',city:db.me.city})});
+    const d=await r.json();
+    if(d.error)throw new Error(d.error);
+    return(d.jobs||[]).map(j=>({id:hid(j.url||j.title||''),title:j.title,company:j.company||'',url:j.url,email:j.email||'',loc:j.loc||'',pay:j.pay||'',date:j.posted||'',verdict:j.verdict||'caution',flags:j.flags||[],tags:[],desc:j.summary||''}));
+  },
+  Remotive:async q=>{
+    const d=await(await fetch('https://remotive.com/api/remote-jobs?limit=60'+(q?'&search='+encodeURIComponent(q):''))).json();
+    return d.jobs.map(j=>({id:'rm'+j.id,title:j.title,company:j.company_name,url:j.url,tags:[j.category].concat(j.tags||[]).filter(Boolean),loc:j.candidate_required_location,date:j.publication_date,desc:strip(j.description)}));
+  },
+  Jobicy:async q=>{
+    const d=await(await fetch('https://jobicy.com/api/v2/remote-jobs?count=50')).json();
+    return(d.jobs||[]).map(j=>({id:'jc'+j.id,title:j.jobTitle,company:j.companyName,url:j.url,tags:[].concat(j.jobIndustry||[]),loc:j.jobGeo,date:j.pubDate,desc:strip(j.jobExcerpt)}));
+  },
+  Arbeitnow:async q=>{
+    const d=await(await fetch('https://www.arbeitnow.com/api/job-board-api')).json();
+    return d.data.map(j=>({id:'an'+j.slug,title:j.title,company:j.company_name,url:j.url,tags:j.tags||[],loc:(j.location||'')+(j.remote?' / Remote':''),date:j.created_at?j.created_at*1000:0,desc:strip(j.description)}));
+  },
+  RemoteOK:async q=>{
+    const d=await(await fetch('https://remoteok.com/api')).json();
+    return d.slice(1).map(j=>({id:'ro'+j.id,title:j.position,company:j.company,url:j.url,tags:j.tags||[],loc:j.location,date:j.date,desc:strip(j.description)}));
+  }
+};
+
+const ts=d=>typeof d==='number'?d:(Date.parse(d)||0);
+const ago=d=>{const t=ts(d);if(!t)return '';const n=Math.floor((Date.now()-t)/864e5);return n<=0?'today':n+'d ago'};
+
+let feedList=[],webList=[];
+async function search(web){
+  const q=$('#q').value.trim().toLowerCase();
+  const words=q.split(/\s+/).filter(Boolean);
+  busy=true;searched=true;msgs=[];draw();
+  const names=web?['Web']:Object.keys(S).filter(n=>n!=='Web');
+  const r=await Promise.allSettled(names.map(n=>S[n](q)));
+  let all=[];
+  r.forEach((x,i)=>{
+    if(x.status==='fulfilled')x.value.forEach(j=>{j.src=names[i];all.push(j)});
+    else msgs.push(names[i]+': '+((x.reason&&x.reason.message)||'failed to load'));
+  });
+  all.forEach(j=>{
+    const hay=(j.title+' '+j.company+' '+(j.tags||[]).join(' ')+' '+j.desc).toLowerCase();
+    j.score=j.src==='Web'?99:words.reduce((n,w)=>n+(hay.includes(w)?1:0),0);
+    if(j.src!=='Web')j.desc=j.desc.slice(0,240);
+  });
+  const list=all.filter(j=>j.src==='Web'||!words.length||j.score>0).sort((a,b)=>b.score-a.score||ts(b.date)-ts(a.date));
+  if(web)webList=list;else feedList=list;
+  results=webList.concat(feedList);
+  busy=false;draw();
+}
+
+function links(){
+  const q=encodeURIComponent($('#q').value.trim()||'gig'),c=encodeURIComponent(db.me.city||'');
+  return[
+    ['LinkedIn remote','https://www.linkedin.com/jobs/search/?keywords='+q+'&f_WT=2'],
+    ['Jobberman','https://www.google.com/search?q=site:jobberman.com+'+q],
+    ['MyJobMag','https://www.google.com/search?q=site:myjobmag.com+'+q],
+    ['Near '+(db.me.city||'me'),'https://www.google.com/search?q='+q+'+gig+'+c]
+  ].map(([n,u])=>`<a class="chip" href="${u}" target="_blank" rel="noopener">${esc(n)}</a>`).join('');
+}
+
+function findHTML(){
+  let h=`<div class="chips">${links()}</div>`;
+  msgs.forEach(m=>h+=`<p class="warn">${esc(m)}</p>`);
+  if(busy)return h+'<p class="empty">Searching job boards...</p>';
+  if(!searched)return h+'<p class="empty">Type any kind of gig and search. Search loads free remote boards. Web searches the open web and flags likely scams (set it up in Profile).</p>';
+  if(!results.length)return h+'<p class="empty">No matches. Try a broader word, like "writer" instead of "copywriter".</p>';
+  h+=`<p class="meta">${results.length} gigs found</p>`;
+  results.slice(0,60).forEach(j=>{
+    const sv=db.jobs[j.id];
+    h+=`<article class="job"><div class="t">${esc(j.title)}</div>
+    <div class="m">${esc(j.company)} / ${esc(j.loc||'Remote')} / ${esc(j.src)}${ago(j.date)?' / '+ago(j.date):''}</div>
+    ${badge(j)}<div class="d">${esc(j.desc)}</div>
+    <div class="a"><button class="pri" data-a="apply" data-id="${esc(j.id)}">Apply</button><button data-a="save" data-id="${esc(j.id)}" ${sv?'disabled':''}>${sv?'Saved':'Save'}</button>
+    <a href="${esc(j.url)}" target="_blank" rel="noopener">Open</a></div></article>`;
+  });
+  return h;
+}
+
+function trackHTML(){
+  const L=Object.values(db.jobs).sort((a,b)=>b.added-a.added);
+  let h='<div class="strip">'+ST.map(s=>`<div><b>${L.filter(j=>j.status===s).length}</b>${s}</div>`).join('')+'</div>';
+  h+='<button class="ghost" data-a="add">+ Add a gig I found elsewhere</button>';
+  if(!L.length)return h+'<p class="empty">Nothing here yet. Save gigs from Find, or add one by hand.</p>';
+  L.forEach(j=>{
+    h+=`<article class="job"><div class="t">${esc(j.title)}</div>
+    <div class="m">${esc(j.company)}${j.status==='applied'&&j.appliedAt?' / applied '+ago(j.appliedAt):''}</div>
+    ${badge(j)}<div class="a"><select data-st="${esc(j.id)}">${ST.map(s=>`<option ${s===j.status?'selected':''}>${s}</option>`).join('')}</select>
+    <button data-a="letter" data-id="${esc(j.id)}">Letter</button>
+    ${j.url?`<a href="${esc(j.url)}" target="_blank" rel="noopener">Open</a>`:''}
+    <button class="x" data-a="rm" data-id="${esc(j.id)}">Remove</button></div>
+    <input class="note" data-note="${esc(j.id)}" placeholder="Notes, contact, follow-up date" value="${esc(j.note)}"></article>`;
+  });
+  return h;
+}
+
+function meHTML(){
+  const m=db.me;
+  return `<p class="meta">Saved on this device only. Your cover letters use these.</p>
+  <label>Your name</label><input data-me="name" value="${esc(m.name)}">
+  <label>Your city (for local searches)</label><input data-me="city" value="${esc(m.city)}">
+  <label>What you can do</label><input data-me="skills" value="${esc(m.skills)}" placeholder="e.g. graphic design, tutoring, data entry, JavaScript">
+  <label>Your pitch, one or two sentences</label><textarea data-me="pitch" rows="4" placeholder="Who you are and what you do well">${esc(m.pitch)}</textarea>
+  <label>Web search Worker URL</label><input data-me="worker" value="${esc(m.worker||'')}" placeholder="https://gighunter.yourname.workers.dev">
+  <label>Worker password</label><input data-me="token" type="password" value="${esc(m.token||'')}">`;
+}
+
+function draw(){
+  const v=$('#v');
+  v.innerHTML=tab==='find'?findHTML():tab==='track'?trackHTML():meHTML();
+  document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.t===tab));
+  const n=Object.keys(db.jobs).length;$('#n').textContent=n?' ('+n+')':'';
+}
+
+const badge=j=>{
+  if(!j.verdict)return '';
+  const c={'likely real':'ok','caution':'mid','risky':'bad'}[j.verdict]||'mid';
+  return `<div class="v ${c}">${esc(j.verdict)}${j.pay?' / '+esc(j.pay):''}</div>`+((j.flags||[]).length?`<div class="m">${j.flags.map(esc).join('; ')}</div>`:'');
+};
+function applyTo(j,text){
+  if(!db.jobs[j.id])db.jobs[j.id]=Object.assign({},j,{added:Date.now(),note:''});
+  const s=db.jobs[j.id];s.status='applied';s.appliedAt=Date.now();save();
+  const txt=text||letter(s);copy(txt);
+  if(s.email)location.href='mailto:'+s.email+'?subject='+encodeURIComponent('Application: '+s.title)+'&body='+encodeURIComponent(txt);
+  else if(s.url)window.open(s.url,'_blank','noopener');
+}
+function letter(j){
+  const m=db.me;
+  return `Hi ${j.company||'there'},\n\nI'm interested in the ${j.title} gig. ${m.pitch||''}`.trim()
+   +(m.skills?`\n\nWhat I bring: ${m.skills}.`:'')
+   +`\n\nI'm reliable, quick to learn, and happy to do a short trial task so you can see my work before committing.\n\nThanks for your time,\n${m.name||''}`;
+}
+
+function copy(t){
+  try{navigator.clipboard.writeText(t)}catch(e){const l=$('#lt');l.select();document.execCommand('copy')}
+}
+
+document.addEventListener('click',e=>{
+  const t=e.target.closest('[data-t]');
+  if(t){tab=t.dataset.t;draw();window.scrollTo(0,0);return}
+  const b=e.target.closest('[data-a]');if(!b)return;
+  const a=b.dataset.a,id=b.dataset.id;
+  if(a==='search'){tab='find';search()}
+  else if(a==='web'){tab='find';search(true)}
+  else if(a==='apply'){const j=results.find(x=>x.id===id)||db.jobs[id];if(j){applyTo(j);draw()}}
+  else if(a==='save'){const j=results.find(x=>x.id===id);if(j){db.jobs[id]=Object.assign({},j,{status:'saved',added:Date.now(),note:''});save();draw()}}
+  else if(a==='rm'){if(confirm('Remove this gig?')){delete db.jobs[id];save();draw()}}
+  else if(a==='add'){
+    const title=prompt('Gig title');if(!title)return;
+    const company=prompt('Client or company (optional)')||'';
+    const url=prompt('Link (optional)')||'';
+    const k='m'+Date.now();
+    db.jobs[k]={id:k,title,company,url,status:'saved',added:Date.now(),note:''};save();draw();
+  }
+  else if(a==='letter'){cur=db.jobs[id];$('#dt').textContent=cur.title;$('#lt').value=letter(cur);$('#dlg').showModal()}
+  else if(a==='copy'){copy($('#lt').value);b.textContent='Copied';setTimeout(()=>b.textContent='Copy',1200)}
+  else if(a==='applied'){
+    if(cur)applyTo(cur,$('#lt').value);
+    $('#dlg').close();draw();
+  }
+  else if(a==='close')$('#dlg').close();
+});
+document.addEventListener('change',e=>{
+  const s=e.target.dataset.st;
+  if(s&&db.jobs[s]){db.jobs[s].status=e.target.value;if(e.target.value==='applied'&&!db.jobs[s].appliedAt)db.jobs[s].appliedAt=Date.now();save();draw()}
+});
+document.addEventListener('input',e=>{
+  const d=e.target.dataset;
+  if(d.note&&db.jobs[d.note]){db.jobs[d.note].note=e.target.value;save()}
+  if(d.me){db.me[d.me]=e.target.value;save()}
+});
+$('#q').addEventListener('keydown',e=>{if(e.key==='Enter'){tab='find';search()}});
+draw();
+</script>
+</body>
+</html>
